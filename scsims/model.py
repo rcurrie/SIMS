@@ -9,7 +9,7 @@ import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
 from pytorch_tabnet.tab_network import TabNet
-from pytorch_tabnet.utils import create_explain_matrix
+from pytorch_tabnet.utils import create_explain_matrix, create_group_matrix
 from scipy.sparse import csc_matrix
 from torchmetrics.functional.classification.stat_scores import _stat_scores_update
 from tqdm import tqdm
@@ -114,6 +114,7 @@ class SIMSClassifier(pl.LightningModule):
             virtual_batch_size=virtual_batch_size,
             momentum=momentum,
             mask_type=mask_type,
+            group_attention_matrix=create_group_matrix([], self.input_dim).to(device),
         )
 
         print(f"Initializing explain matrix")
@@ -489,6 +490,3 @@ def aggregate_metrics(num_classes) -> Dict[str, Callable]:
     }
 
     return metrics
-
-
-
