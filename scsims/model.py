@@ -21,7 +21,11 @@ from scsims.temperature_scaling import _ECELoss
 from torchmetrics import Accuracy, F1Score, Precision, Recall, Specificity
 from sklearn.preprocessing import LabelEncoder
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device(
+    "cuda:0" if torch.cuda.is_available() 
+    else "mps" if torch.backends.mps.is_available() 
+    else "cpu")
+
 
 class SIMSClassifier(pl.LightningModule):
     def __init__(
