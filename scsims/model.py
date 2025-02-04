@@ -21,11 +21,6 @@ from scsims.temperature_scaling import _ECELoss
 from torchmetrics import Accuracy, F1Score, Precision, Recall, Specificity
 from sklearn.preprocessing import LabelEncoder
 
-device = torch.device(
-    "cuda:0" if torch.cuda.is_available() 
-    else "mps" if torch.backends.mps.is_available() 
-    else "cpu")
-
 
 class SIMSClassifier(pl.LightningModule):
     def __init__(
@@ -78,8 +73,8 @@ class SIMSClassifier(pl.LightningModule):
             self._from_pretrained(**pretrained.get_params())
 
         self.metrics = {
-            "train": {x: y.to(device) for x, y in aggregate_metrics(num_classes=self.output_dim).items()},
-            "val": {x: y.to(device) for x, y in aggregate_metrics(num_classes=self.output_dim).items()},
+            "train": {x: y.to(self.device) for x, y in aggregate_metrics(num_classes=self.output_dim).items()},
+            "val": {x: y.to(self.device) for x, y in aggregate_metrics(num_classes=self.output_dim).items()},
         }
 
         self.optim_params = (
@@ -118,7 +113,7 @@ class SIMSClassifier(pl.LightningModule):
             virtual_batch_size=virtual_batch_size,
             momentum=momentum,
             mask_type=mask_type,
-            group_attention_matrix=create_group_matrix([], self.input_dim).to(device),
+            group_attention_matrix=create_group_matrix([], self.input_dim).to(self.device),
         )
 
         print(f"Initializing explain matrix")
@@ -130,7 +125,7 @@ class SIMSClassifier(pl.LightningModule):
                 self.network.post_embed_dim,
             )
 
-        self._inference_device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        self._inference_device = self.device
         self.temperature = torch.nn.Parameter(torch.ones(1) * 1.5)
 
     def forward(self, x):
@@ -141,8 +136,9 @@ class SIMSClassifier(pl.LightningModule):
     def _step(self, batch, tag):
         x, y = batch
         logits, M_loss = self.network(x)
-
-        loss = self.loss(logits, y, weight=self.weights)
+        # Ensure weights are moved to the device of logits before computing loss.
+        weights = self.weights.to(self.device) if isinstance(self.weights, torch.Tensor) else self.weights
+        loss = self.loss(logits, y, weight=weights)
         loss = loss - self.lambda_sparse * M_loss
 
         # take softmax for metrics
@@ -172,7 +168,7 @@ class SIMSClassifier(pl.LightningModule):
         results = self._step(batch, "train")
         self.log(f"train_loss", results["loss"], on_epoch=True, on_step=True)
         for name, metric in self.metrics["train"].items():
-            value = metric(results["probs"], batch[1])
+            value = metric(results["probs"].cpu(), batch[1].cpu())
             self.log(f"train_{name}", value=value)
 
         return results["loss"]
@@ -187,7 +183,7 @@ class SIMSClassifier(pl.LightningModule):
         results = self._step(batch, "val")
         self.log(f"val_loss", results["loss"], on_epoch=True, on_step=True)
         for name, metric in self.metrics["val"].items():
-            value = metric(results["probs"], batch[1])
+            value = metric(results["probs"].cpu(), batch[1].cpu())
             self.log(f"val_{name}", value=value)
 
         return results["loss"]
